@@ -24,6 +24,7 @@ func ClientArgs(c *Client) []string {
 	addIf(len(c.VK.Links) > 0, "-links", strings.Join(c.VK.Links, ","))
 	addIf(c.Provider.Name != def.Provider.Name, "-provider", c.Provider.Name)
 	addIf(c.Proxy.Listen != def.Proxy.Listen, "-listen", c.Proxy.Listen)
+	addIf(c.Interface != def.Interface, "-interface", c.Interface)
 	addIf(c.TURN.Host != "", "-turn", c.TURN.Host)
 	addIf(c.TURN.Port != "", "-port", c.TURN.Port)
 	addIf(c.TURN.N != def.TURN.N, "-n", strconv.Itoa(c.TURN.N))

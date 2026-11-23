@@ -13,10 +13,11 @@ import (
 
 // raw хранит неразобранные строковые опции до этапа assemble.
 type raw struct {
-	Turn   string
-	Port   string
-	Listen string
-	Peer   string
+	Turn      string
+	Port      string
+	Listen    string
+	Peer      string
+	Interface string
 
 	Provider string
 	Link     string
@@ -168,9 +169,10 @@ func assemble(r raw) (*Client, error) {
 			Config: r.TunnelConfig,
 			MTU:    tunnelMTU,
 		},
-		ClientID: r.ClientID,
-		SubURL:   r.SubURL,
-		Routes:   r.Routes,
+		ClientID:  r.ClientID,
+		SubURL:    r.SubURL,
+		Routes:    r.Routes,
+		Interface: r.Interface,
 	}
 
 	if r.DNSServers != "" {

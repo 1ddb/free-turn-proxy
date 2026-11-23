@@ -12,11 +12,12 @@ import (
 
 // ClientJSON - JSON-схема конфигурации клиента (gomobile).
 type ClientJSON struct {
-	Peer     string `json:"peer"`
-	ClientID string `json:"clientId"`
-	SubURL   string `json:"subUrl"`
-	Provider string `json:"provider"`
-	Routes   bool   `json:"routes"`
+	Peer      string `json:"peer"`
+	ClientID  string `json:"clientId"`
+	SubURL    string `json:"subUrl"`
+	Provider  string `json:"provider"`
+	Routes    bool   `json:"routes"`
+	Interface string `json:"interface"`
 
 	TURN   turnJSON   `json:"turn"`
 	Proxy  proxyJSON  `json:"proxy"`
@@ -123,11 +124,12 @@ func ParseClientJSON(data []byte, overlayURI string) (*Client, error) {
 func defaultClientJSON() ClientJSON {
 	r := defaultRaw()
 	return ClientJSON{
-		Peer:     r.Peer,
-		ClientID: r.ClientID,
-		SubURL:   r.SubURL,
-		Provider: r.Provider,
-		Routes:   r.Routes,
+		Peer:      r.Peer,
+		ClientID:  r.ClientID,
+		SubURL:    r.SubURL,
+		Provider:  r.Provider,
+		Routes:    r.Routes,
+		Interface: r.Interface,
 		TURN: turnJSON{
 			N:         r.N,
 			Transport: r.Transport,
@@ -165,8 +167,9 @@ func (j ClientJSON) toRaw() raw {
 		Listen: j.Proxy.Listen,
 		Peer:   j.Peer,
 
-		Provider: j.Provider,
-		Links:    strings.Join(j.VK.Links, ","),
+		Provider:  j.Provider,
+		Links:     strings.Join(j.VK.Links, ","),
+		Interface: j.Interface,
 
 		N:              j.TURN.N,
 		StreamsPerCred: j.VK.StreamsPerCred,

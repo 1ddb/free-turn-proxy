@@ -48,6 +48,7 @@ func Version() string
 ```json
 {
   "peer": "1.2.3.4:56000",
+  "interface": "",
   "clientId": "0123456789abcdef0123456789abcdef",
   "provider": "vk",
   "turn":  {"n": 12, "transport": "tcp", "host": "", "port": ""},
@@ -63,6 +64,7 @@ func Version() string
 ```
 
 *   `clientId` - обязателен. Ядро на мобиле не пишет файлы, ID должен храниться в приложении.
+*   `interface` - привязка исходящих сокетов (DNS, VK-логин, TURN/DTLS) к интерфейсу. Принимает имя (`en0`, `pdp_ip0`) или алиас `cellular` / `wifi`; пусто - маршрут по умолчанию. Алиас `cellular` предпочитает сотовый интерфейс с откатом на Wi-Fi, `wifi` - наоборот.
 *   `provider`: `vk` или `direct` (без реле, прямо на `peer`; блок `vk` игнорируется). `turn.n` = 0 - дефолт провайдера (12 / 1).
 
 ### Режим туннеля

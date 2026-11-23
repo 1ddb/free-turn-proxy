@@ -20,12 +20,15 @@ func SetControl(fn ControlFunc) {
 	control.Store(&fn)
 }
 
-// Apply вызывается из net.Dialer и net.ListenConfig для защиты создаваемых сокетов.
+// Apply вызывается из net.Dialer и net.ListenConfig для защиты и привязки
+// создаваемых сокетов к выбранному интерфейсу.
 func Apply(network, address string, c syscall.RawConn) error {
 	if fn := control.Load(); fn != nil {
-		return (*fn)(network, address, c)
+		if err := (*fn)(network, address, c); err != nil {
+			return err
+		}
 	}
-	return nil
+	return applyInterface(network, c)
 }
 
 // NoMPTCP отключает MPTCP у слушателя. Go 1.24+ включает его по умолчанию,

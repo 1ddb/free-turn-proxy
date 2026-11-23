@@ -14,6 +14,7 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/client/dnsdial"
 	"github.com/samosvalishe/free-turn-proxy/internal/config"
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
+	"github.com/samosvalishe/free-turn-proxy/internal/netctl"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk"
 	"github.com/samosvalishe/free-turn-proxy/internal/proxy/tcprelay"
 	"github.com/samosvalishe/free-turn-proxy/internal/proxy/udprelay"
@@ -147,6 +148,11 @@ func New(cfg *config.Client, deps Deps) (*Session, error) {
 		return nil, fmt.Errorf("session diagnostic ID: %w", err)
 	}
 	deps.Logger = logx.WithPrefix(deps.Logger, "[session="+id.String()+"] ")
+	if name, err := netctl.SetInterface(cfg.Interface); err != nil {
+		return nil, fmt.Errorf("bind interface: %w", err)
+	} else if name != "" {
+		deps.Logger.Infof("net: outbound interface %s", name)
+	}
 
 	total := cfg.TURN.N
 	if cfg.Provider.Name != config.ProviderDirect {

@@ -44,6 +44,7 @@ func ParseClient(args []string, errOut io.Writer) (*Client, error) {
 	fs.StringVar(&r.Link, "link", r.Link, "(устарел) одна ссылка VK Calls, используйте -links")
 	fs.StringVar(&r.Links, "links", r.Links, "ссылки VK Calls через запятую: https://vk.ru/call/join/...,https://vk.ru/call/join/...")
 	fs.StringVar(&r.Peer, "peer", r.Peer, "адрес сервера на VPS, host:port; обязательно")
+	fs.StringVar(&r.Interface, "interface", r.Interface, "исходящий интерфейс: имя или cellular | wifi; пусто - маршрут по умолчанию")
 	fs.IntVar(&r.N, "n", r.N, "число параллельных потоков; 0 - по провайдеру (vk 12, direct 1)")
 	fs.StringVar(&r.Transport, "transport", r.Transport, "транспорт до TURN-реле: tcp | udp")
 	fs.StringVar(&r.Mode, "mode", r.Mode, "режим туннеля: udp (WireGuard) | tcp (Xray/sing-box)")

@@ -421,3 +421,29 @@ func TestParseClient_ProviderDirect(t *testing.T) {
 		t.Fatalf("explicit -n: %v, n=%d", err, c.TURN.N)
 	}
 }
+
+func TestParseClient_Interface(t *testing.T) {
+	args := append(validClientArgs(), "-interface", "en0")
+	c, err := ParseClient(args, io.Discard)
+	if err != nil {
+		t.Fatalf("ParseClient() error = %v", err)
+	}
+	if c.Interface != "en0" {
+		t.Errorf("Interface = %q, want en0", c.Interface)
+	}
+	got := strings.Join(ClientArgs(c), " ")
+	if !strings.Contains(got, "-interface en0") {
+		t.Errorf("ClientArgs() = %q, want -interface en0", got)
+	}
+}
+
+func TestParseClientJSON_Interface(t *testing.T) {
+	data := `{"peer":"1.2.3.4:5000","vk":{"links":["abcdef"]},"interface":"cellular"}`
+	c, err := ParseClientJSON([]byte(data), "")
+	if err != nil {
+		t.Fatalf("ParseClientJSON() error = %v", err)
+	}
+	if c.Interface != "cellular" {
+		t.Errorf("Interface = %q, want cellular", c.Interface)
+	}
+}
