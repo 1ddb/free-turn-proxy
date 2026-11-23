@@ -126,6 +126,7 @@ func listen(cfg *config.Server, addr *net.UDPAddr, logger logx.Logger) (net.List
 
 func serve(ctx context.Context, logger logx.Logger, listener net.Listener, db *clientsdb.DB, cfg *config.Server) {
 	bonds := &bond.Server{}
+	udpPool := udpserver.NewPool(logger, cfg.Proxy.Connect)
 	var wg sync.WaitGroup
 	var backoff time.Duration
 	for {
@@ -154,7 +155,7 @@ func serve(ctx context.Context, logger logx.Logger, listener net.Listener, db *c
 		}
 		backoff = 0
 		wg.Go(func() {
-			_ = safego.Run(logger, func() { handleAccepted(ctx, logger, db, conn, cfg, bonds) })
+			_ = safego.Run(logger, func() { handleAccepted(ctx, logger, db, conn, cfg, bonds, udpPool) })
 		})
 	}
 }
@@ -191,7 +192,7 @@ func modeName(b byte) string {
 	return string(config.ProxyModeUDP)
 }
 
-func handleAccepted(ctx context.Context, logger logx.Logger, db *clientsdb.DB, conn net.Conn, cfg *config.Server, bonds *bond.Server) {
+func handleAccepted(ctx context.Context, logger logx.Logger, db *clientsdb.DB, conn net.Conn, cfg *config.Server, bonds *bond.Server, udpPool *udpserver.Pool) {
 	defer func() {
 		if closeErr := conn.Close(); closeErr != nil {
 			logger.Warnf("failed to close incoming connection: %s", closeErr)
@@ -233,7 +234,7 @@ func handleAccepted(ctx context.Context, logger logx.Logger, db *clientsdb.DB, c
 	case cfg.Proxy.Mode == config.ProxyModeTCP:
 		tcpserver.Handle(ctx, logger, data, cfg.Proxy.Connect, cfg.KCP.Profile)
 	default:
-		udpserver.Handle(ctx, logger, data, cfg.Proxy.Connect)
+		udpPool.Handle(ctx, data, clientID)
 	}
 	logger.Infof("Session down: client=%s from=%s", clientID, conn.RemoteAddr())
 }
