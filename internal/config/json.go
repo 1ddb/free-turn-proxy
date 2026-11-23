@@ -54,6 +54,8 @@ type vkJSON struct {
 	ManualCaptcha   bool     `json:"manualCaptcha"`
 	AutoCaptcha     bool     `json:"autoCaptcha"`
 	AdvancedCaptcha bool     `json:"advancedCaptcha"`
+	CaptchaHosts    []string `json:"captchaHosts"`
+	CaptchaPort     string   `json:"captchaPort"`
 	Platform        string   `json:"platform"`
 }
 
@@ -141,6 +143,8 @@ func defaultClientJSON() ClientJSON {
 			ManualCaptcha:   r.ManualCaptcha,
 			AutoCaptcha:     r.AutoCaptcha,
 			AdvancedCaptcha: r.AdvancedCaptcha,
+			CaptchaHosts:    splitCommaList(r.CaptchaHosts),
+			CaptchaPort:     captchaPortOrDefault(r.CaptchaPort),
 			Platform:        r.Platform,
 		},
 		Obf: obfJSON{
@@ -181,6 +185,8 @@ func (j ClientJSON) toRaw() raw {
 		ManualCaptcha:   j.VK.ManualCaptcha,
 		AutoCaptcha:     j.VK.AutoCaptcha,
 		AdvancedCaptcha: j.VK.AdvancedCaptcha,
+		CaptchaHosts:    strings.Join(j.VK.CaptchaHosts, ","),
+		CaptchaPort:     j.VK.CaptchaPort,
 		Platform:        j.VK.Platform,
 
 		DNSMode:    j.DNS.Mode,

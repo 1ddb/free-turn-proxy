@@ -19,6 +19,8 @@ type Config struct {
 	Dialer          net.Dialer
 	ManualOnly      bool
 	AdvancedCaptcha bool
+	CaptchaHosts    []string
+	CaptchaPort     string
 	PowCapture      PowCaptureFunc
 	Platform        string
 	StreamsPerCache int
@@ -47,6 +49,9 @@ func New(cfg Config, solver ManualSolverFunc) (*Provider, error) {
 	captcha.SetLogger(cfg.Log)
 	manualcaptcha.SetLogger(cfg.Log)
 	manualcaptcha.SetDebug(cfg.Debug)
+	if err := manualcaptcha.SetListenConfig(cfg.CaptchaHosts, cfg.CaptchaPort); err != nil {
+		return nil, err
+	}
 	auth := vkauth.New(vkauth.Config{
 		Credentials:     cfg.Credentials,
 		Dialer:          cfg.Dialer,

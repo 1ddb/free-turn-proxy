@@ -56,6 +56,8 @@ func ParseClient(args []string, errOut io.Writer) (*Client, error) {
 	fs.BoolVar(&r.Debug, "debug", r.Debug, "подробные debug-логи")
 	fs.BoolVar(&r.ManualCaptcha, "manual-captcha", r.ManualCaptcha, "ручная VK captcha в браузере вместо авто; только -provider vk")
 	fs.BoolVar(&r.AdvancedCaptcha, "advanced-captcha", r.AdvancedCaptcha, "авто-captcha с PoW, посчитанным браузером на локальной странице; при неудаче - обычный авторешатель; только -provider vk")
+	fs.StringVar(&r.CaptchaHosts, "captcha-hosts", r.CaptchaHosts, "дополнительные адреса/интерфейсы для страницы captcha через запятую: 192.168.1.1,eth0")
+	fs.StringVar(&r.CaptchaPort, "captcha-port", r.CaptchaPort, "порт страницы captcha для всех слушателей")
 	fs.StringVar(&r.Platform, "platform", r.Platform, "класс устройства персоны VK-auth: desktop | mobile; только -provider vk")
 	fs.StringVar(&r.DNSMode, "dns-mode", r.DNSMode, "резолвер клиента: plain | doh | auto")
 	fs.StringVar(&r.DNSServers, "dns-servers", r.DNSServers, "свои UDP/53 DNS через запятую: ip[:port][,ip[:port]...]")

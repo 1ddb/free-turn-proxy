@@ -9,7 +9,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,9 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samosvalishe/free-turn-proxy/internal/client/ish"
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
-	"github.com/samosvalishe/free-turn-proxy/internal/netctl"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk/internal/browserprofile"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk/internal/captcha"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk/internal/personanet"
@@ -41,8 +38,6 @@ var logHolder logx.Holder
 func SetLogger(l logx.Logger) { logHolder.Set(l) }
 
 func Log() logx.Logger { return logHolder.Get() }
-
-const captchaListenPort = "8765"
 
 //go:embed inject.js
 var injectJS string
@@ -81,25 +76,6 @@ type browserCommand struct {
 	args []string
 }
 
-func localCaptchaOrigin() string {
-	return "http://localhost:" + captchaListenPort
-}
-
-func localCaptchaListenAddrs() []string {
-	return []string{
-		"127.0.0.1:" + captchaListenPort,
-		"[::1]:" + captchaListenPort,
-	}
-}
-
-func localCaptchaHosts() []string {
-	return []string{
-		"localhost:" + captchaListenPort,
-		"127.0.0.1:" + captchaListenPort,
-		"[::1]:" + captchaListenPort,
-	}
-}
-
 // blockedProxyHosts - реклама и внешняя телеметрия. Всё, что не в allowed, и так
 // не проксируется; список нужен для хостов под доменами VK, которые иначе прошли
 // бы по суффиксу. Captcha без них решается: adFp тогда пустой, ровно как у
@@ -129,31 +105,21 @@ func isAllowedProxyHost(hostname string) bool {
 	return false
 }
 
-func isLocalCaptchaHost(host string) bool {
-	for _, localHost := range localCaptchaHosts() {
-		if strings.EqualFold(host, localHost) {
-			return true
-		}
-	}
-	return false
-}
-
-func localCaptchaURLForTarget(targetURL *neturl.URL) string {
-	localURL := &neturl.URL{
-		Scheme:   "http",
-		Host:     "localhost:" + captchaListenPort,
-		Path:     targetURL.Path,
-		RawPath:  targetURL.RawPath,
-		RawQuery: targetURL.RawQuery,
-	}
-	if localURL.Path == "" {
-		localURL.Path = "/"
-	}
-	return localURL.String()
-}
-
 func targetOrigin(targetURL *neturl.URL) string {
 	return targetURL.Scheme + "://" + targetURL.Host
+}
+
+type captchaOriginContextKey struct{}
+
+func withCaptchaOrigin(r *http.Request, origin string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), captchaOriginContextKey{}, origin))
+}
+
+func captchaOriginFromRequest(r *http.Request) string {
+	if origin, ok := r.Context().Value(captchaOriginContextKey{}).(string); ok && origin != "" {
+		return origin
+	}
+	return captchaOriginForRequest(r)
 }
 
 func isSafeLocalRedirectPath(raw string) bool {
@@ -166,7 +132,7 @@ func isSafeLocalRedirectPath(raw string) bool {
 	return true
 }
 
-func rewriteProxyRedirectLocation(raw string, targetURL *neturl.URL) (string, bool) {
+func rewriteProxyRedirectLocation(raw string, targetURL *neturl.URL, localOrigin string) (string, bool) {
 	if isSafeLocalRedirectPath(raw) {
 		return raw, true
 	}
@@ -179,10 +145,10 @@ func rewriteProxyRedirectLocation(raw string, targetURL *neturl.URL) (string, bo
 		return "", false
 	}
 
-	return localCaptchaURLForTarget(parsed), true
+	return localCaptchaURLForTarget(parsed, localOrigin), true
 }
 
-func rewriteProxyHeaderURL(raw string, targetURL *neturl.URL) string {
+func rewriteProxyHeaderURL(raw string, targetURL *neturl.URL, localOrigin string) string {
 	if raw == "" {
 		return raw
 	}
@@ -190,7 +156,11 @@ func rewriteProxyHeaderURL(raw string, targetURL *neturl.URL) string {
 	if err != nil {
 		return raw
 	}
-	if parsed.Scheme != "http" || !isLocalCaptchaHost(parsed.Host) {
+	origin, err := neturl.Parse(localOrigin)
+	if err != nil || origin.Host == "" {
+		return raw
+	}
+	if parsed.Scheme != "http" || !sameHostPort(parsed.Host, origin.Host, captchaPort()) {
 		return raw
 	}
 	parsed.Scheme = targetURL.Scheme
@@ -198,7 +168,7 @@ func rewriteProxyHeaderURL(raw string, targetURL *neturl.URL) string {
 	return parsed.String()
 }
 
-func rewriteProxyRequest(req *http.Request, targetURL *neturl.URL) {
+func rewriteProxyRequest(req *http.Request, targetURL *neturl.URL, localOrigin string) {
 	req.URL.Scheme = targetURL.Scheme
 	req.URL.Host = targetURL.Host
 	if req.URL.Path == "" {
@@ -222,7 +192,7 @@ func rewriteProxyRequest(req *http.Request, targetURL *neturl.URL) {
 		req.Header.Del(h)
 	}
 	for _, headerName := range []string{"Origin", "Referer"} {
-		if rewritten := rewriteProxyHeaderURL(req.Header.Get(headerName), targetURL); rewritten != "" {
+		if rewritten := rewriteProxyHeaderURL(req.Header.Get(headerName), targetURL, localOrigin); rewritten != "" {
 			req.Header.Set(headerName, rewritten)
 		} else {
 			req.Header.Del(headerName)
@@ -280,10 +250,9 @@ func pathProxyURL(abs string) string {
 
 // rewriteHTMLAttrsServerSide переписывает абсолютные и protocol-relative URL
 // в src/href/action HTML на стороне сервера. URL, совпадающие с upstream origin,
-// идут на localhost; остальные - через /generic_proxy, чтобы cross-domain
+// идут на localOrigin; остальные - через /generic_proxy, чтобы cross-domain
 // ресурсы (st.vk.ru, userapi.com и т.д.) грузились через прокси.
-func rewriteHTMLAttrsServerSide(html string, targetURL *neturl.URL) string {
-	localOrigin := localCaptchaOrigin()
+func rewriteHTMLAttrsServerSide(html string, targetURL *neturl.URL, localOrigin string) string {
 	upstreamOrigin := targetOrigin(targetURL)
 
 	rewriteURL := func(rawURL string) string {
@@ -347,8 +316,7 @@ func rewriteHTMLAttrsServerSide(html string, targetURL *neturl.URL) string {
 	return html
 }
 
-func rewriteCaptchaHTMLMode(html string, targetURL *neturl.URL, resultPath, powCapturePath string) string {
-	localOrigin := localCaptchaOrigin()
+func rewriteCaptchaHTMLMode(html string, targetURL *neturl.URL, localOrigin, resultPath, powCapturePath string) string {
 	upstreamOrigin := targetOrigin(targetURL)
 
 	// Шаг 1: текстовая замена основного upstream origin
@@ -357,7 +325,7 @@ func rewriteCaptchaHTMLMode(html string, targetURL *neturl.URL, resultPath, powC
 	// Шаг 2: серверный rewrite остальных абсолютных URL в HTML-атрибутах.
 	// Критично: браузер начинает грузить <script src> / <link href> / <img src>
 	// сразу при парсинге HTML - раньше любых инжектированных JS-перехватов.
-	html = rewriteHTMLAttrsServerSide(html, targetURL)
+	html = rewriteHTMLAttrsServerSide(html, targetURL, localOrigin)
 
 	script := injectScriptTag(localOrigin, upstreamOrigin, resultPath, powCapturePath)
 
@@ -375,39 +343,9 @@ func rewriteCaptchaHTMLMode(html string, targetURL *neturl.URL, resultPath, powC
 	}
 }
 
-func startCaptchaServer(ctx context.Context, srv *http.Server, logPrefix string) error {
-	var listenErrs []string
-	var listening bool
-
-	for _, addr := range localCaptchaListenAddrs() {
-		listener, err := netctl.NoMPTCP(nil).Listen(ctx, "tcp", addr)
-		if err != nil {
-			listenErrs = append(listenErrs, fmt.Sprintf("%s (%v)", addr, err))
-			continue
-		}
-		listening = true
-		wrappedListener, err := ish.WrapListener(listener)
-		if err != nil {
-			Log().Warnf("%s: failed to wrap listener for iSH: %v", logPrefix, err)
-			wrappedListener = listener
-		}
-		go func(listener net.Listener) {
-			if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				Log().Errorf("%s: %s", logPrefix, err)
-			}
-		}(wrappedListener)
-	}
-
-	if listening {
-		return nil
-	}
-
-	return fmt.Errorf("captcha listeners failed: %s", strings.Join(listenErrs, "; "))
-}
-
 // runCaptchaServerAndWait открывает браузер и ждёт токен решения.
 // При срабатывании ctx возвращает ctx.Err(); в обоих случаях HTTP-сервер останавливается.
-func runCaptchaServerAndWait(ctx context.Context, handler http.Handler, captchaURL string, keyCh <-chan string, logPrefix string, present func(string)) (string, error) {
+func runCaptchaServerAndWait(ctx context.Context, handler http.Handler, captchaURL func() string, keyCh <-chan string, logPrefix string, present func(string)) (string, error) {
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	if err := startCaptchaServer(ctx, srv, logPrefix); err != nil {
@@ -424,18 +362,19 @@ func runCaptchaServerAndWait(ctx context.Context, handler http.Handler, captchaU
 		}
 	}()
 
+	targetURL := captchaURL()
 	powCapture := strings.Contains(logPrefix, "PoW capture")
 	if powCapture {
-		Log().Infof("%s: waiting for browser PoW computation at %s", logPrefix, captcha.SafeURL(captchaURL))
+		Log().Infof("%s: waiting for browser PoW computation at %s", logPrefix, captcha.SafeURL(targetURL))
 		// Полный адрес (session_token в query) - только в -debug: для хоста, который открывает
 		// страницу сам (скрытый WebView приложения, запускающего CLI), а не браузером из present.
-		Log().Debugf("%s: browser PoW page %s", logPrefix, captchaURL)
+		Log().Debugf("%s: browser PoW page %s", logPrefix, targetURL)
 	} else {
 		Log().Warnf("%s: ACTION REQUIRED: manual captcha solving needed", logPrefix)
 		Log().Warnf("%s: if the browser did not open, go to %s", logPrefix, localCaptchaOrigin())
 	}
 
-	present(captchaURL)
+	present(targetURL)
 
 	select {
 	case key := <-keyCh:
@@ -592,19 +531,21 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 	proxy := &httputil.ReverseProxy{
 		Transport: transport,
 		Rewrite: func(req *httputil.ProxyRequest) {
-			rewriteProxyRequest(req.Out, targetURL)
+			origin := captchaOriginFromRequest(req.In)
+			rewriteProxyRequest(req.Out, targetURL, origin)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			Log().Errorf("[Captcha Proxy] %s %s: %v", r.Method, r.URL.String(), err)
 			http.Error(w, "ошибка прокси капчи, детали в консоли клиента", http.StatusBadGateway)
 		},
 		ModifyResponse: func(res *http.Response) error {
+			origin := captchaOriginFromRequest(res.Request)
 			rewriteProxyCookies(res.Header)
 
 			if res.StatusCode >= 300 && res.StatusCode < 400 {
 				if loc := res.Header.Get("Location"); loc != "" {
 					// не логируем полный redirect URL - шум в консоли
-					if rewritten, ok := rewriteProxyRedirectLocation(loc, targetURL); ok {
+					if rewritten, ok := rewriteProxyRedirectLocation(loc, targetURL, origin); ok {
 						res.Header.Set("Location", rewritten)
 					} else {
 						res.Header.Del("Location")
@@ -667,7 +608,7 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 					res.Header.Del(headerName)
 				}
 
-				bodyBytes = []byte(rewriteCaptchaHTMLMode(string(bodyBytes), targetURL, resultPath, powCapturePath))
+				bodyBytes = []byte(rewriteCaptchaHTMLMode(string(bodyBytes), targetURL, origin, resultPath, powCapturePath))
 			}
 
 			// Тело отдаём разжатым независимо от типа: для JSON-ответа check
@@ -691,6 +632,7 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 
 	serveGeneric := func(w http.ResponseWriter, r *http.Request, targetParsed *neturl.URL) {
 		targetAuthURL := targetParsed.String()
+		origin := captchaOriginFromRequest(r)
 		if targetParsed.Host == "" {
 			http.Error(w, "Bad URL", http.StatusBadRequest)
 			return
@@ -705,7 +647,7 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 				req.Out.URL.Path = targetParsed.Path
 				req.Out.URL.RawPath = targetParsed.RawPath
 				req.Out.URL.RawQuery = targetParsed.RawQuery
-				rewriteProxyRequest(req.Out, targetParsed)
+				rewriteProxyRequest(req.Out, targetParsed, origin)
 			},
 			ModifyResponse: func(res *http.Response) error {
 				// Remove security headers that block proxied cross-origin static assets.
@@ -770,12 +712,13 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		Log().Debugf("[Captcha Proxy] HTTP %s %s", r.Method, r.URL.Path)
+		origin := captchaOriginForRequest(r)
 		if r.URL.Path == "/" && targetURL.Path != "" && targetURL.Path != "/" && r.URL.RawQuery == "" {
 			// не логируем полный redirect URL - шум в консоли
-			http.Redirect(w, r, localCaptchaURLForTarget(targetURL), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, localCaptchaURLForTarget(targetURL, origin), http.StatusTemporaryRedirect)
 			return
 		}
-		proxy.ServeHTTP(w, r)
+		proxy.ServeHTTP(w, withCaptchaOrigin(r, origin))
 	})
 
 	logPrefix := "proxy HTTP server error"
@@ -786,7 +729,9 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 	if capturePow {
 		resultCh = powCh
 	}
-	return runCaptchaServerAndWait(ctx, mux, localCaptchaURLForTarget(targetURL), resultCh, logPrefix, present)
+	return runCaptchaServerAndWait(ctx, requireCaptchaHost(mux), func() string {
+		return localCaptchaURLForTarget(targetURL, localCaptchaOrigin())
+	}, resultCh, logPrefix, present)
 }
 
 func powCaptureHandler(expectedPath string, keyCh chan<- string) http.HandlerFunc {
@@ -820,7 +765,13 @@ func powCaptureHandler(expectedPath string, keyCh chan<- string) http.HandlerFun
 
 func captchaResultHandler(expectedPath string, keyCh chan<- string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if subtle.ConstantTimeCompare([]byte(r.URL.Path), []byte(expectedPath)) != 1 || !isLocalCaptchaHost(r.Host) || r.Header.Get("Origin") != localCaptchaOrigin() {
+		if subtle.ConstantTimeCompare([]byte(r.URL.Path), []byte(expectedPath)) != 1 || !isLocalCaptchaHost(r.Host) {
+			http.NotFound(w, r)
+			return
+		}
+		requestHost, err := normalizeHostPort(r.Host, captchaPort())
+		origin, ok := originHost(r.Header.Get("Origin"))
+		if err != nil || !ok || origin != requestHost {
 			http.NotFound(w, r)
 			return
 		}

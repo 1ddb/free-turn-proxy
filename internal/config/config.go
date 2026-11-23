@@ -62,6 +62,8 @@ type VKOpts struct {
 	ManualCaptcha   bool
 	AutoCaptcha     bool
 	AdvancedCaptcha bool
+	CaptchaHosts    []string
+	CaptchaPort     string
 	Platform        Platform
 }
 

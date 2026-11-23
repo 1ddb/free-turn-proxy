@@ -421,3 +421,48 @@ func TestParseClient_ProviderDirect(t *testing.T) {
 		t.Fatalf("explicit -n: %v, n=%d", err, c.TURN.N)
 	}
 }
+
+func TestParseClient_CaptchaListeners(t *testing.T) {
+	args := append(validClientArgs(), "-captcha-hosts", "127.0.0.1,eth0", "-captcha-port", "9000")
+	c, err := ParseClient(args, io.Discard)
+	if err != nil {
+		t.Fatalf("ParseClient() error = %v", err)
+	}
+	if len(c.VK.CaptchaHosts) != 2 || c.VK.CaptchaHosts[0] != "127.0.0.1" || c.VK.CaptchaHosts[1] != "eth0" {
+		t.Errorf("CaptchaHosts = %v", c.VK.CaptchaHosts)
+	}
+	if c.VK.CaptchaPort != "9000" {
+		t.Errorf("CaptchaPort = %q, want 9000", c.VK.CaptchaPort)
+	}
+	got := strings.Join(ClientArgs(c), " ")
+	if !strings.Contains(got, "-captcha-hosts 127.0.0.1,eth0") || !strings.Contains(got, "-captcha-port 9000") {
+		t.Errorf("ClientArgs() = %q, want captcha flags", got)
+	}
+}
+
+func TestParseClient_CaptchaListenersInvalid(t *testing.T) {
+	tests := [][]string{
+		{"-captcha-port", "0"},
+		{"-captcha-port", "70000"},
+		{"-captcha-hosts", "192.168.1.5:9000"},
+		{"-captcha-hosts", "http://192.168.1.5"},
+		{"-captcha-hosts", "192.168.1.5/path"},
+	}
+	for _, extra := range tests {
+		args := append(validClientArgs(), extra...)
+		if _, err := ParseClient(args, io.Discard); err == nil {
+			t.Errorf("ParseClient(%v) error = nil, want validation error", extra)
+		}
+	}
+}
+
+func TestParseClientJSON_CaptchaListeners(t *testing.T) {
+	data := `{"peer":"1.2.3.4:5000","vk":{"links":["abcdef"],"captchaHosts":["eth0"],"captchaPort":"9000"}}`
+	c, err := ParseClientJSON([]byte(data), "")
+	if err != nil {
+		t.Fatalf("ParseClientJSON() error = %v", err)
+	}
+	if len(c.VK.CaptchaHosts) != 1 || c.VK.CaptchaHosts[0] != "eth0" || c.VK.CaptchaPort != "9000" {
+		t.Errorf("VK captcha = %v / %q", c.VK.CaptchaHosts, c.VK.CaptchaPort)
+	}
+}

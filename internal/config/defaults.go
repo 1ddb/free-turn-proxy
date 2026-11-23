@@ -31,6 +31,7 @@ const (
 	DefaultProvider       = ProviderVK
 	DefaultPlatform       = PlatformDesktop
 	DefaultObfProfile     = ObfProfileNone
+	DefaultCaptchaPort    = "8765"
 
 	DefaultServerListen = "0.0.0.0:56000"
 )
@@ -42,6 +43,7 @@ func defaultRaw() raw {
 		StreamsPerCred:  DefaultStreamsPerCred,
 		AutoCaptcha:     true,
 		AdvancedCaptcha: false,
+		CaptchaPort:     DefaultCaptchaPort,
 		Transport:       DefaultTransport,
 		Mode:            DefaultMode,
 		ObfProfile:      string(DefaultObfProfile),

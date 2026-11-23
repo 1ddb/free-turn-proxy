@@ -92,7 +92,7 @@ func TestRunCaptchaServerPresentsAfterListen(t *testing.T) {
 		keyCh <- "token"
 	}
 
-	got, err := runCaptchaServerAndWait(ctx, handler, localCaptchaOrigin(), keyCh, "test", present)
+	got, err := runCaptchaServerAndWait(ctx, handler, func() string { return localCaptchaOrigin() }, keyCh, "test", present)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestRewriteProxyRedirectLocation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, ok := rewriteProxyRedirectLocation(tc.location, targetURL)
+			got, ok := rewriteProxyRedirectLocation(tc.location, targetURL, localCaptchaOrigin())
 			if ok != tc.ok {
 				t.Fatalf("rewriteProxyRedirectLocation() ok = %v, want %v", ok, tc.ok)
 			}

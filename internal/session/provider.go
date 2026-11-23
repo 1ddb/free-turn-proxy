@@ -68,6 +68,8 @@ func buildProvider(
 				Dialer:          dialer,
 				ManualOnly:      cfg.VK.ManualCaptcha || !cfg.VK.AutoCaptcha,
 				AdvancedCaptcha: cfg.VK.AdvancedCaptcha,
+				CaptchaHosts:    cfg.VK.CaptchaHosts,
+				CaptchaPort:     cfg.VK.CaptchaPort,
 				PowCapture:      powCapture,
 				Platform:        string(cfg.VK.Platform),
 				StreamsPerCache: cfg.VK.StreamsPerCred,

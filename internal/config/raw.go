@@ -36,6 +36,8 @@ type raw struct {
 	ManualCaptcha   bool
 	AutoCaptcha     bool
 	AdvancedCaptcha bool
+	CaptchaHosts    string
+	CaptchaPort     string
 	Platform        string
 
 	DNSMode    string
@@ -158,6 +160,8 @@ func assemble(r raw) (*Client, error) {
 			ManualCaptcha:   r.ManualCaptcha,
 			AutoCaptcha:     r.AutoCaptcha,
 			AdvancedCaptcha: r.AdvancedCaptcha,
+			CaptchaHosts:    splitCommaList(r.CaptchaHosts),
+			CaptchaPort:     captchaPortOrDefault(r.CaptchaPort),
 			Platform:        platform,
 		},
 		DNS: DNSOpts{Mode: r.DNSMode},
@@ -190,6 +194,25 @@ func assemble(r raw) (*Client, error) {
 	c.Obf.Key = key
 
 	return c, nil
+}
+
+func splitCommaList(value string) []string {
+	out := make([]string, 0, strings.Count(value, ",")+1)
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func captchaPortOrDefault(port string) string {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return DefaultCaptchaPort
+	}
+	return port
 }
 
 // normalizeVKLinks извлекает join-код звонка из URL или строки кода.

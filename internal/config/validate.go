@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/samosvalishe/free-turn-proxy/internal/proxy/bond"
@@ -73,12 +75,42 @@ func validateProvider(c *Client) error {
 	if c.VK.StreamsPerCred <= 0 {
 		return errors.New("-streams-per-cred must be positive")
 	}
+	if err := validateCaptchaListen(c.VK.CaptchaHosts, c.VK.CaptchaPort); err != nil {
+		return err
+	}
 	switch c.VK.Platform {
 	case PlatformDesktop, PlatformMobile:
 		return nil
 	default:
 		return fmt.Errorf("invalid -platform value %q: must be %s | %s", c.VK.Platform, PlatformDesktop, PlatformMobile)
 	}
+}
+
+func validateCaptchaListen(hosts []string, port string) error {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		port = DefaultCaptchaPort
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("invalid -captcha-port %q: must be 1..65535", port)
+	}
+	for _, host := range hosts {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		if strings.Contains(host, "://") {
+			return fmt.Errorf("invalid -captcha-hosts entry %q: scheme is not allowed", host)
+		}
+		if strings.ContainsAny(host, "/?#") {
+			return fmt.Errorf("invalid -captcha-hosts entry %q: must be an address or interface name", host)
+		}
+		if _, _, err := net.SplitHostPort(host); err == nil {
+			return fmt.Errorf("invalid -captcha-hosts entry %q: use -captcha-port for the port", host)
+		}
+	}
+	return nil
 }
 
 func validateDNSMode(m string) error {
